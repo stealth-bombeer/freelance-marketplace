@@ -32,6 +32,7 @@ contract FreelanceMarketplace {
     struct Request {
         address freelancer;
         address client;
+        bool taken;
     }
 
     /* Events */
@@ -75,10 +76,16 @@ contract FreelanceMarketplace {
     mapping(address => Request[]) private s_freelancerRequests;
     /* Keep track of the requests received by a client */
     mapping(address => Request[]) private s_clientRequests;
+    /* Keep track of the collateral put up by each client */
+    mapping(address => uint256) private s_freelancerBalances;
     /* Keep track of all the projects */
     Project[] private s_projects;
 
-    function postReview(
+    ///////////////////////////
+    //// Main functions //////
+    ///////////////////////////
+
+    function createReview(
         address freelancerAddress,
         string memory review,
         uint16 rating
@@ -142,13 +149,20 @@ contract FreelanceMarketplace {
             revert FreelanceMarketplace__ClientNotFound(clientAddress);
         }
 
-        Request memory request = Request(msg.sender, clientAddress);
+        bool status = false;
+        Request memory request = Request(msg.sender, clientAddress, status);
         s_freelancerRequests[msg.sender].push(request);
         s_clientRequests[clientAddress].push(request);
+
         emit RequestCreated(clientAddress, msg.sender);
     }
 
-    /* View / Pure Functions */
+    function acceptRequest() external {}
+
+    /////////////////////////
+    //// View / Pure  //////
+    ///////////////////////
+
     function getProfile(
         address freelancerAddress
     ) external view returns (Profile memory) {
@@ -170,22 +184,32 @@ contract FreelanceMarketplace {
         return allProjects;
     }
 
-    function getNumRequestsFreelancer() external view returns (uint256) {
+    function getNumRequestsFreelancer(
+        address freelancerAddress
+    ) external view returns (uint256) {
+        if (!s_freelancers[freelancerAddress]) {
+            revert FreelanceMarketplace__FreelancerNotFound(freelancerAddress);
+        }
+
+        return s_freelancerRequests[freelancerAddress].length;
+    }
+
+    function getNumRequestsClient(
+        address clientAddress
+    ) external view returns (uint256) {
+        if (!s_clients[clientAddress]) {
+            revert FreelanceMarketplace__ClientNotFound(clientAddress);
+        }
+
+        return s_clientRequests[clientAddress].length;
+    }
+
+    function getFreelancerBalance(
+        address freelancerAddress
+    ) external view returns (uint256) {
         if (!s_freelancers[msg.sender]) {
-            revert FreelanceMarketplace__FreelancerNotFound(msg.sender);
+            revert FreelanceMarketplace__FreelancerNotFound(freelancerAddress);
         }
-
-        return s_freelancerRequests[msg.sender].length;
+        return s_freelancerBalances[freelancerAddress];
     }
-
-    function getNumRequestsClient() external view returns (uint256) {
-        if (!s_clients[msg.sender]) {
-            revert FreelanceMarketplace__ClientNotFound(msg.sender);
-        }
-
-        return s_clientRequests[msg.sender].length;
-    }
-
-    // function removeFreelancer(address freelancer) {
-    // }
 }
