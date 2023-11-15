@@ -3,6 +3,7 @@ pragma solidity ^0.8.7;
 
 error FreelanceMarketplace__ClientNotFound(address clientAddress);
 error FreelanceMarketplace__FreelancerNotFound(address freelancerAddress);
+error FreelanceMarketplace__MissingDetails();
 
 contract FreelanceMarketplace {
     /* Custom Declarations */
@@ -14,17 +15,15 @@ contract FreelanceMarketplace {
     }
 
     struct Profile {
-        string githubProfile;
-        string linkedInProfile;
+        string githubURL;
+        string linkedInURL;
         string email;
-        string hash;
+        string profileHash;
     }
 
     /* Events */
-    event ThirdPartyServicesLinked(
-        string indexed githubProfile,
-        string linkedInProfile,
-        string indexed emailId
+    event ProfileComplete(
+        Profile indexed profile
     );
 
     event ReviewListed(
@@ -63,6 +62,27 @@ contract FreelanceMarketplace {
             rating
         );
         emit ReviewListed(freelancer, msg.sender, review, rating);
+    }
+
+    function createProfile(
+        string memory githubURL,
+        string memory linkedInURL,
+        string memory email,
+        string memory profileHash
+    ) external {
+        if(!s_freelancers[msg.sender]) {
+            revert FreelanceMarketplace__FreelancerNotFound()
+        }
+
+        if (
+            !profileHash || !githubURL || !linkedInURL || !email || !profileHash
+        ) {
+            revert FreelanceMarketplace__MissingDetails();
+        }
+
+        Profile memory profile = Profile(githubURL, linkedInURL, email, profileHash);
+        s_freelancerToProfile[msg.sender] = profile;
+        emit ProfileComplete(profile);
     }
 
     function getProfile(
