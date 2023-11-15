@@ -41,6 +41,10 @@ module.exports = {
                 COMPILER_SETTINGS,
             },
             {
+                version: "0.8.21",
+                COMPILER_SETTINGS,
+            },
+            {
                 version: "0.6.6",
                 COMPILER_SETTINGS,
             },
