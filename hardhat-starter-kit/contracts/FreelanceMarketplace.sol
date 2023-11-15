@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.7;
 
+import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
+import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+
 error FreelanceMarketplace__ClientNotFound(address clientAddress);
 error FreelanceMarketplace__FreelancerNotFound(address freelancerAddress);
 error FreelanceMarketplace__MissingDetails();
+error FreelanceMarketplace__TranserFailed();
 
-contract FreelanceMarketplace {
+contract FreelanceMarketplace is VRFConsumerBaseV2 {
     /* Custom Declarations */
     struct Review {
         address client;
@@ -57,6 +61,8 @@ contract FreelanceMarketplace {
     );
 
     event RequestCreated(address indexed client, address indexed freelancer);
+    event PoolPrizeWinnerRequested(uint256 indexed requestId);
+    event PoolPrizeWinnerPicked(address indexed winner);
 
     /* State Variables */
 
@@ -80,6 +86,28 @@ contract FreelanceMarketplace {
     mapping(address => uint256) private s_freelancerBalances;
     /* Keep track of all the projects */
     Project[] private s_projects;
+    /* Keep track of top performers */
+    address payable[] public s_elites;
+
+    /* Chainlink VRF Variables */
+    VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
+    uint64 private immutable i_subscriptionId;
+    bytes32 private immutable i_gasLane;
+    uint16 private constant REQUEST_CONFIRMATIONS = 3;
+    uint32 private immutable i_callbackGaslimit;
+    uint32 private constant NUM_WORDS = 1;
+
+    constructor(
+        address vrfCoordinatorV2,
+        uint64 subscriptionId,
+        bytes32 gasLane,
+        uint32 callbackGasLimit
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
+        i_subscriptionId = subscriptionId;
+        i_callbackGaslimit = callbackGasLimit;
+        i_gasLane = gasLane;
+    }
 
     ///////////////////////////
     //// Main functions //////
@@ -158,6 +186,35 @@ contract FreelanceMarketplace {
     }
 
     function acceptRequest() external {}
+
+    function requestRandomWinner() external {
+        uint256 requestId = i_vrfCoordinator.requestRandomWords(
+            i_gasLane,
+            i_subscriptionId,
+            REQUEST_CONFIRMATIONS,
+            i_callbackGaslimit,
+            NUM_WORDS
+        );
+
+        emit PoolPrizeWinnerRequested(requestId);
+    }
+
+    function fulfillRandomWords(
+        uint256 /* requestId */,
+        uint256[] memory randomWords
+    ) internal override {
+        uint256 winnerIndex = randomWords[0] % s_elites.length;
+        address winner = s_elites[winnerIndex];
+        (bool success, ) = payable(winner).call{value: address(this).balance}(
+            ""
+        );
+
+        if (!success) {
+            revert FreelanceMarketplace__TranserFailed();
+        }
+
+        emit PoolPrizeWinnerPicked(winner);
+    }
 
     /////////////////////////
     //// View / Pure  //////
