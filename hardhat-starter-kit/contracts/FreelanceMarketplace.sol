@@ -3,13 +3,14 @@ pragma solidity ^0.8.7;
 
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
+import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
 
 error FreelanceMarketplace__ClientNotFound(address clientAddress);
 error FreelanceMarketplace__FreelancerNotFound(address freelancerAddress);
 error FreelanceMarketplace__MissingDetails();
 error FreelanceMarketplace__TranserFailed();
 
-contract FreelanceMarketplace is VRFConsumerBaseV2 {
+contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     /* Custom Declarations */
     struct Review {
         address client;
@@ -63,9 +64,9 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
     event RequestCreated(address indexed client, address indexed freelancer);
     event PoolPrizeWinnerRequested(uint256 indexed requestId);
     event PoolPrizeWinnerPicked(address indexed winner);
+    event NftMinted(address indexed buyer, uint256 indexed tokenId);
 
     /* State Variables */
-
     /* Recording freelancer address when they sign up */
     mapping(address => bool) private s_freelancers;
     /* Recording clients address when they sign up */
@@ -88,6 +89,9 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
     Project[] private s_projects;
     /* Keep track of top performers */
     address payable[] public s_elites;
+    /* TOKEN_URIS */
+    string[3] private s_dogTokenURI;
+    uint256 private s_tokenCounter;
 
     /* Chainlink VRF Variables */
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
@@ -101,12 +105,15 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
         address vrfCoordinatorV2,
         uint64 subscriptionId,
         bytes32 gasLane,
-        uint32 callbackGasLimit
-    ) VRFConsumerBaseV2(vrfCoordinatorV2) {
+        uint32 callbackGasLimit,
+        string[3] memory dogTokenURI
+    ) VRFConsumerBaseV2(vrfCoordinatorV2) ERC721("Freelance", "FMP") {
         i_vrfCoordinator = VRFCoordinatorV2Interface(vrfCoordinatorV2);
         i_subscriptionId = subscriptionId;
         i_callbackGaslimit = callbackGasLimit;
         i_gasLane = gasLane;
+        s_dogTokenURI = dogTokenURI;
+        s_tokenCounter = 0;
     }
 
     ///////////////////////////
@@ -158,7 +165,14 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
             email,
             profileHash
         );
+
         s_freelancerToProfile[msg.sender] = profile;
+
+        /* Mint NFT with a predefined TOKEN_URI */
+        _safeMint(msg.sender, s_tokenCounter);
+        s_tokenCounter = s_tokenCounter + 1;
+        emit NftMinted(msg.sender, s_tokenCounter);
+
         emit ProfileComplete(
             msg.sender,
             githubURL,
@@ -185,7 +199,14 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
         emit RequestCreated(clientAddress, msg.sender);
     }
 
-    function acceptRequest() external {}
+    function acceptRequest() external {
+        // Client will accept the request of the freelancer
+        // Reward the freelancer with a NFT
+    }
+
+    function projectSubmission() external {
+        // Assign a special NFT for project Submission
+    }
 
     function requestRandomWinner() external {
         uint256 requestId = i_vrfCoordinator.requestRandomWords(
@@ -199,6 +220,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
         emit PoolPrizeWinnerRequested(requestId);
     }
 
+    // Get the winner of the pool prize
     function fulfillRandomWords(
         uint256 /* requestId */,
         uint256[] memory randomWords
@@ -209,11 +231,15 @@ contract FreelanceMarketplace is VRFConsumerBaseV2 {
             ""
         );
 
+        emit PoolPrizeWinnerPicked(winner);
+
         if (!success) {
             revert FreelanceMarketplace__TranserFailed();
         }
 
-        emit PoolPrizeWinnerPicked(winner);
+        _safeMint(winner, s_tokenCounter);
+        s_tokenCounter = s_tokenCounter + 1;
+        emit NftMinted(winner, s_tokenCounter);
     }
 
     /////////////////////////
