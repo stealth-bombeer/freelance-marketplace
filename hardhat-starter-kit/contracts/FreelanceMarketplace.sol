@@ -4,16 +4,20 @@ pragma solidity ^0.8.7;
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
-import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/dev/v1_0_0/FunctionsClient.sol";
-import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
-import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/dev/v1_0_0/libraries/FunctionsRequest.sol";
+import "@chainlink/contracts/src/v0.8/ChainlinkClient.sol";
+import "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
 
 error FreelanceMarketplace__ClientNotFound(address clientAddress);
 error FreelanceMarketplace__FreelancerNotFound(address freelancerAddress);
 error FreelanceMarketplace__MissingDetails();
 error FreelanceMarketplace__TranserFailed();
 
-contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
+contract FreelanceMarketplace is
+    VRFConsumerBaseV2,
+    ERC721,
+    ChainlinkClient,
+    ConfirmedOwner
+{
     /* Custom Declarations */
     struct Review {
         address client;
@@ -74,7 +78,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     event PoolPrizeWinnerRequested(uint256 indexed requestId);
     event PoolPrizeWinnerPicked(address indexed winner);
     event NftMinted(address indexed buyer, uint256 indexed tokenId);
-
+    event RequestName(uint256 indexed requestId, string indexed name);
     /* State Variables */
     /* Recording freelancer address when they sign up */
     mapping(address => bool) private s_freelancers;
@@ -103,6 +107,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     /* TOKEN_URIS */
     string[3] private s_dogTokenURI;
     uint256 private s_tokenCounter;
+    string public s_name;
 
     /* Chainlink VRF Variables */
     VRFCoordinatorV2Interface private immutable i_vrfCoordinator;
@@ -125,6 +130,41 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
         i_gasLane = gasLane;
         s_dogTokenURI = dogTokenURI;
         s_tokenCounter = 0;
+
+        setChainlinkToken(0x779877A7B0D9E8603169DdbD7836e478b4624789);
+        setChainlinkOracle(0x6090149792dAAeE9D1D568c9f9a6F6B46AA29eFD);
+        jobId = "7d80a6386ef543a3abb52817f6707e3b";
+        fee = (1 * LINK_DIVISIBILITY) / 10; // 0,1 * 10**18 (Varies by network and job)
+    }
+
+    function requestVolumeData() public returns (bytes32 requestId) {
+        Chainlink.Request memory req = buildChainlinkRequest(
+            jobId,
+            address(this),
+            this.fulfill.selector
+        );
+
+        // Set the URL to perform the GET request on
+        req.add(
+            "get",
+            "https://api.github.com/repos/adwaitmandge/freelance-marketplace/commits"
+        );
+
+        req.add("path", "name"); // Chainlink nodes 1.0.0 and later support this format
+
+        // Sends the request
+        return sendChainlinkRequest(req, fee);
+    }
+
+    /**
+     * Receive the response in the form of uint256
+     */
+    function fulfill(
+        bytes32 _requestId,
+        string memory _name
+    ) public recordChainlinkFulfillment(_requestId) {
+        emit RequestName(_requestId, _name);
+        s_name = _name;
     }
 
     ///////////////////////////
