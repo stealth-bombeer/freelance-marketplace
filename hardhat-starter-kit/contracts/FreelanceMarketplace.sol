@@ -4,6 +4,9 @@ pragma solidity ^0.8.7;
 import "@chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import "@chainlink/contracts/src/v0.8/VRFConsumerBaseV2.sol";
 import "@openzeppelin/contracts/token/ERC721/ERC721.sol";
+import {FunctionsClient} from "@chainlink/contracts/src/v0.8/functions/dev/v1_0_0/FunctionsClient.sol";
+import {ConfirmedOwner} from "@chainlink/contracts/src/v0.8/shared/access/ConfirmedOwner.sol";
+import {FunctionsRequest} from "@chainlink/contracts/src/v0.8/functions/dev/v1_0_0/libraries/FunctionsRequest.sol";
 
 error FreelanceMarketplace__ClientNotFound(address clientAddress);
 error FreelanceMarketplace__FreelancerNotFound(address freelancerAddress);
@@ -27,6 +30,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     }
 
     struct Project {
+        uint256 projectId;
         address freelancer;
         address client;
         uint256 startTime;
@@ -35,6 +39,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     }
 
     struct Request {
+        uint256 requestId;
         address freelancer;
         address client;
         bool taken;
@@ -61,7 +66,11 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
         address indexed freelancer
     );
 
-    event RequestCreated(address indexed client, address indexed freelancer);
+    event RequestCreated(
+        address indexed client,
+        address indexed freelancer,
+        uint256 indexed requestId
+    );
     event PoolPrizeWinnerRequested(uint256 indexed requestId);
     event PoolPrizeWinnerPicked(address indexed winner);
     event NftMinted(address indexed buyer, uint256 indexed tokenId);
@@ -89,6 +98,8 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
     Project[] private s_projects;
     /* Keep track of top performers */
     address payable[] public s_elites;
+    /* Keep track of the recent pool prize winner */
+    address private s_recentWinner;
     /* TOKEN_URIS */
     string[3] private s_dogTokenURI;
     uint256 private s_tokenCounter;
@@ -169,9 +180,9 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
         s_freelancerToProfile[msg.sender] = profile;
 
         /* Mint NFT with a predefined TOKEN_URI */
-        _safeMint(msg.sender, s_tokenCounter);
-        s_tokenCounter = s_tokenCounter + 1;
-        emit NftMinted(msg.sender, s_tokenCounter);
+        // _safeMint(msg.sender, s_tokenCounter);
+        // s_tokenCounter = s_tokenCounter + 1;
+        // emit NftMinted(msg.sender, s_tokenCounter);
 
         emit ProfileComplete(
             msg.sender,
@@ -182,7 +193,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
         );
     }
 
-    function createRequest(address clientAddress) external {
+    function createRequest(address clientAddress, uint256 projectId) external {
         if (!s_freelancers[msg.sender]) {
             revert FreelanceMarketplace__FreelancerNotFound(msg.sender);
         }
@@ -191,17 +202,32 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
             revert FreelanceMarketplace__ClientNotFound(clientAddress);
         }
 
+        /* Project ID should exist */
+
         bool status = false;
-        Request memory request = Request(msg.sender, clientAddress, status);
+        Project memory project = s_projects[projectId];
+        Request memory request = Request(
+            block.timestamp,
+            msg.sender,
+            clientAddress,
+            status
+        );
         s_freelancerRequests[msg.sender].push(request);
         s_clientRequests[clientAddress].push(request);
 
-        emit RequestCreated(clientAddress, msg.sender);
+        emit RequestCreated(clientAddress, msg.sender, request.requestId);
     }
 
-    function acceptRequest() external {
+    function acceptRequest(Request memory request) external {
         // Client will accept the request of the freelancer
         // Reward the freelancer with a NFT
+        uint256 requestId = request.requestId;
+        address freelancer = request.freelancer;
+        for (uint256 i = 0; i < s_freelancerRequests[freelancer].length; i++) {
+            if (s_freelancerRequests[i].requestId == requestId) {
+                s_freelancerRequests[i].status = true;
+            }
+        }
     }
 
     function projectSubmission() external {
@@ -232,6 +258,7 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
         );
 
         emit PoolPrizeWinnerPicked(winner);
+        s_recentWinner = winner;
 
         if (!success) {
             revert FreelanceMarketplace__TranserFailed();
@@ -294,5 +321,9 @@ contract FreelanceMarketplace is VRFConsumerBaseV2, ERC721 {
             revert FreelanceMarketplace__FreelancerNotFound(freelancerAddress);
         }
         return s_freelancerBalances[freelancerAddress];
+    }
+
+    function getRecentWinner() external view returns (address) {
+        return s_recentWinner;
     }
 }
